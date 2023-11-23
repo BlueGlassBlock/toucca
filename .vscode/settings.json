@@ -1,0 +1,23 @@
+{
+    "cSpell.words": [
+        "dprintln",
+        "gamebtn",
+        "gamebtns",
+        "HRESULT",
+        "hwnd",
+        "LPARAM",
+        "LRESULT",
+        "opbtn",
+        "opbtns",
+        "POINTERACTIVATE",
+        "POINTERCAPTURECHANGED",
+        "POINTERDOWN",
+        "POINTERENTER",
+        "POINTERLEAVE",
+        "POINTERUP",
+        "POINTERUPDATE",
+        "Toucca",
+        "WNDPROC",
+        "WPARAM"
+    ]
+}
