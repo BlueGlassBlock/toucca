@@ -2,6 +2,12 @@ use windows::Win32::Foundation::WPARAM;
 
 #[macro_export]
 macro_rules! dprintln {
+    (dbg, $($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        {
+            dprintln!($($arg)*);
+        }
+    };
     ($($arg:tt)*) => {
         #[allow(unused_unsafe)]
         unsafe {
@@ -23,8 +29,7 @@ where
         match self {
             Ok(v) => v,
             Err(e) => {
-                dprintln!("Error: {:?}", e);
-                panic!();
+                panic!("Error: {:?}", e);
             },
         }
     }

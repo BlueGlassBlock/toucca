@@ -33,12 +33,16 @@ static mut CONFIG: TouccaConfig = TouccaConfig::default();
 
 #[no_mangle]
 pub unsafe extern "system" fn mercury_io_init() -> HRESULT {
+    std::panic::set_hook(Box::new(|info| {
+        dprintln!("Toucca panicked: {}", info);
+    }));
+
     dprintln!("Reading config");
     CONFIG = TouccaConfig::load(&HSTRING::from(".\\segatools.ini"));
     if let &config::TouccaMode::Relative(..) = &CONFIG.touch.mode {
-        dprintln!("Relative touch mode is not supported");
-        return S_FALSE;
+        panic!("Relative touch mode is not supported");
     }
+
     S_OK
 }
 
@@ -145,7 +149,7 @@ const WM_POINTER_LIST: [u32; 7] = [
     WM_POINTERLEAVE,
     WM_POINTERACTIVATE,
 ];
-unsafe fn handle_pointer_msg(_: HWND, param: WPARAM) {
+unsafe fn update_pointer(_: HWND, param: WPARAM) {
     let mut ptr_info: POINTER_INFO = POINTER_INFO::default();
     if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
         return;
@@ -166,13 +170,17 @@ static _WINDOW_RECT: Mutex<RECT> = Mutex::new(RECT {
     top: 0,
     bottom: 0,
 });
-const WM_MOVE_LIST: [u32; 1] = [WM_MOVE];
-unsafe fn handle_move_msg(_: HWND, param: LPARAM) {
-    let rect: RECT = (param.0 as *mut RECT).read();
-    dprintln!("Window moving to {:?}", rect);
+const WM_WINDOW_CHANGED_LIST: [u32; 2] = [WM_MOVE, WM_SIZE];
+unsafe fn update_window_rect(hwnd: HWND, _: LPARAM) {
+    let mut rect: RECT = RECT::default();
+
+    if let Err(e) = GetWindowRect(hwnd, &mut rect) {
+        dprintln!("Toucca update window rect error: {:?}", e);
+        return;
+    }
 
     *_WINDOW_RECT.lock().dbg_unwrap() = rect;
-    dprintln!("{:?}", _WINDOW_RECT);
+    dprintln!(dbg, "Updated rect: {:?}", rect);
 }
 type WndProc = unsafe fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 static mut _FALLBACK_WND_PROC: WndProc = DefWindowProcW;
@@ -184,9 +192,9 @@ unsafe extern "system" fn wnd_proc_hook(
     l_param: LPARAM,
 ) -> LRESULT {
     if WM_POINTER_LIST.contains(&msg) {
-        handle_pointer_msg(hwnd, w_param);
-    } else if WM_MOVE_LIST.contains(&msg) {
-        handle_move_msg(hwnd, l_param);
+        update_pointer(hwnd, w_param);
+    } else if WM_WINDOW_CHANGED_LIST.contains(&msg) {
+        update_window_rect(hwnd, l_param);
     }
     _FALLBACK_WND_PROC(hwnd, msg, w_param, l_param)
 }
@@ -234,13 +242,13 @@ fn parse_point(abs_x: f64, abs_y: f64) -> Vec<usize> {
         }
     } as usize;
     
-    dprintln!("Got section {}, dist {}", section, dist);
+    dprintln!(dbg, "Got section {}, dist {}", section, dist);
     if dist > radius {
         return vec![];
     }
     unsafe {
         let ring: usize = (CONFIG.touch.divisions as f64 * dist / radius) as usize;
-        dprintln!("Got section {}, ring {}", section, ring);
+        dprintln!(dbg, "Got section {}, ring {}", section, ring);
         CONFIG.touch.mode.to_cells(section, ring)
     }
 }
@@ -249,7 +257,7 @@ unsafe fn touch_loop(cell_pressed: &mut [bool; 240]) {
     cell_pressed.fill(false);
     let read_guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
     for (_, (x, y)) in read_guard.iter() {
-        dprintln!("Got touch {}, {}", x, y);
+        dprintln!(dbg, "Got touch {}, {}", x, y);
         let cells = parse_point(*x as f64, *y as f64);
         for cell in cells {
             cell_pressed[cell] = true;

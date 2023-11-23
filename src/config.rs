@@ -18,8 +18,7 @@ impl TouccaMode {
     pub fn to_cells(&self, section_index: usize, ring: usize) -> Vec<usize> {
         match self {
             Self::Relative(..) => {
-                dprintln!("Relative touch mode is not supported");
-                panic!();
+                panic!("Relative touch mode is not supported");
             }
             Self::Absolute(ranges) => {
                 let mut res = vec![];
@@ -51,8 +50,7 @@ impl TouccaTouchConfig {
     pub unsafe fn load(filename: &HSTRING) -> Self {
         let divisions = GetPrivateProfileIntW(h!("touch"), h!("divisions"), 8, filename) as usize;
         if !(4..=20).contains(&divisions) {
-            dprintln!("Invalid touch divisions");
-            panic!();
+            panic!("Invalid touch divisions");
         }
         let mode = match GetPrivateProfileIntW(h!("touch"), h!("mode"), 0, filename) as usize {
             0 => {
@@ -74,7 +72,7 @@ impl TouccaTouchConfig {
                     );
                     let end = GetPrivateProfileIntW(
                         h!("touch"),
-                        &HSTRING::from(format!("ring{}end", i)),
+                        &HSTRING::from(format!("ring{}_end", i)),
                         -1,
                         filename,
                     );
@@ -89,8 +87,7 @@ impl TouccaTouchConfig {
                     }
                     // check range
                     if range.0 > range.1 || range.1 >= divisions {
-                        dprintln!("Invalid touch range: {}-{}", range.0, range.1);
-                        panic!();
+                        panic!("Invalid touch range: {}-{}", range.0, range.1);
                     }
                     dprintln!("Set ring {} touch range: {} - {}", i, range.0, range.1);
                 }
@@ -100,14 +97,12 @@ impl TouccaTouchConfig {
                 let start = GetPrivateProfileIntW(h!("touch"), h!("radius"), 1, filename) as usize;
                 // check start in 0-3
                 if start > 3 {
-                    dprintln!("Invalid relative touch start position");
-                    panic!();
+                    panic!("Invalid relative touch start position");
                 }
                 TouccaMode::Relative(start)
             }
             _ => {
-                dprintln!("Invalid touch mode");
-                panic!();
+                panic!("Invalid touch mode");
             }
         };
         Self { divisions, mode }
