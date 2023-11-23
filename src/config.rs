@@ -55,8 +55,7 @@ impl TouccaTouchConfig {
         let mode = match GetPrivateProfileIntW(h!("touch"), h!("mode"), 0, filename) as usize {
             0 => {
                 let mut ranges = [(0, 0); 4];
-                for i in 0..4 {
-                    let range = &mut ranges[i];
+                for (i, range) in ranges.iter_mut().enumerate() {
                     *range = (divisions - 4 + i, divisions - 4 + i);
                     let single = GetPrivateProfileIntW(
                         h!("touch"),

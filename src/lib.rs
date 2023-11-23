@@ -21,7 +21,7 @@ use windows::Win32::UI::Input::Pointer::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_get_api_version() -> u16 {
+pub extern "system" fn mercury_io_get_api_version() -> u16 {
     let version =
         option_env!("MERCURY_IO_VERSION").map_or_else(|| 256, |v| v.parse::<u16>().unwrap_or(256));
     dprintln!("Returning API version: {}", version);
@@ -32,24 +32,27 @@ pub unsafe extern "system" fn mercury_io_get_api_version() -> u16 {
 static mut CONFIG: TouccaConfig = TouccaConfig::default();
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_init() -> HRESULT {
+pub extern "system" fn mercury_io_init() -> HRESULT {
     std::panic::set_hook(Box::new(|info| {
         dprintln!("Toucca panicked: {}", info);
     }));
 
     dprintln!("Reading config");
-    CONFIG = TouccaConfig::load(&HSTRING::from(".\\segatools.ini"));
-    if let &config::TouccaMode::Relative(..) = &CONFIG.touch.mode {
-        panic!("Relative touch mode is not supported");
+    unsafe {
+        // Safety: CONFIG is initialized once per process (daemon and game process)
+        CONFIG = TouccaConfig::load(&HSTRING::from(".\\segatools.ini"));
+        if let &config::TouccaMode::Relative(..) = &CONFIG.touch.mode {
+            panic!("Relative touch mode is not supported");
+        }
     }
 
     S_OK
 }
 
 enum OpBtn {
-    TEST = 0x01,
-    SERVICE = 0x02,
-    COIN = 0x04,
+    Test = 0x01,
+    Service = 0x02,
+    Coin = 0x04,
 }
 
 enum GameBtn {
@@ -61,52 +64,64 @@ static OP_BTN_LOCK: Mutex<u8> = Mutex::new(0);
 static GAME_BTN_LOCK: Mutex<u8> = Mutex::new(0);
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_poll() -> HRESULT {
+pub extern "system" fn mercury_io_poll() -> HRESULT {
     let mut op_btn: u8 = 0;
     let mut game_btn: u8 = 0;
-    if GetAsyncKeyState(CONFIG.vk_test) != 0 {
-        op_btn |= OpBtn::TEST as u8;
+    unsafe {
+        // Safety: CONFIG is "const" & GetAsyncKeyState is safe-ish
+        if GetAsyncKeyState(CONFIG.vk_test) != 0 {
+            op_btn |= OpBtn::Test as u8;
+        }
+        if GetAsyncKeyState(CONFIG.vk_service) != 0 {
+            op_btn |= OpBtn::Service as u8;
+        }
+        if GetAsyncKeyState(CONFIG.vk_coin) != 0 {
+            op_btn |= OpBtn::Coin as u8;
+        }
+        if GetAsyncKeyState(CONFIG.vk_vol_up) != 0 {
+            game_btn |= GameBtn::VolUp as u8;
+        }
+        if GetAsyncKeyState(CONFIG.vk_vol_down) != 0 {
+            game_btn |= GameBtn::VolDown as u8;
+        }
+        *OP_BTN_LOCK.lock().dbg_unwrap() = op_btn;
+        *GAME_BTN_LOCK.lock().dbg_unwrap() = game_btn;
     }
-    if GetAsyncKeyState(CONFIG.vk_service) != 0 {
-        op_btn |= OpBtn::SERVICE as u8;
-    }
-    if GetAsyncKeyState(CONFIG.vk_coin) != 0 {
-        op_btn |= OpBtn::COIN as u8;
-    }
-    if GetAsyncKeyState(CONFIG.vk_vol_up) != 0 {
-        game_btn |= GameBtn::VolUp as u8;
-    }
-    if GetAsyncKeyState(CONFIG.vk_vol_down) != 0 {
-        game_btn |= GameBtn::VolDown as u8;
-    }
-    *OP_BTN_LOCK.lock().dbg_unwrap() = op_btn;
-    *GAME_BTN_LOCK.lock().dbg_unwrap() = game_btn;
     S_OK
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_get_opbtns(opbtn: *mut u8) {
+pub extern "system" fn mercury_io_get_opbtns(opbtn: *mut u8) {
     if let Some(mut ptr) = NonNull::new(opbtn) {
-        let op_btn_ref = ptr.as_mut();
-        *op_btn_ref = *OP_BTN_LOCK.lock().dbg_unwrap();
+        unsafe {
+            // Safety: relies on parent hook developer
+            let op_btn_ref = ptr.as_mut();
+            *op_btn_ref = *OP_BTN_LOCK.lock().dbg_unwrap();
+        }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_get_gamebtns(gamebtn: *mut u8) {
+pub extern "system" fn mercury_io_get_gamebtns(gamebtn: *mut u8) {
     if let Some(mut ptr) = NonNull::new(gamebtn) {
-        let game_btn_ref = ptr.as_mut();
-        *game_btn_ref = *GAME_BTN_LOCK.lock().dbg_unwrap();
+        unsafe {
+            // Safety: relies on parent hook developer
+            let game_btn_ref = ptr.as_mut();
+            *game_btn_ref = *GAME_BTN_LOCK.lock().dbg_unwrap();
+        }
     }
 }
 
 static mut _INIT: bool = false;
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_touch_init() -> HRESULT {
-    if !_INIT {
-        dprintln!("Toucca: Touch init");
-        touch_init();
-        _INIT = true;
+pub extern "system" fn mercury_io_touch_init() -> HRESULT {
+    unsafe {
+        // Safety: Only initialized once per process
+        if !_INIT {
+            dprintln!("Toucca: Touch init");
+            touch_init();
+            _INIT = true;
+        }
     }
     S_OK
 }
@@ -149,10 +164,13 @@ const WM_POINTER_LIST: [u32; 7] = [
     WM_POINTERLEAVE,
     WM_POINTERACTIVATE,
 ];
-unsafe fn update_pointer(_: HWND, param: WPARAM) {
+fn update_pointer(_: HWND, param: WPARAM) {
     let mut ptr_info: POINTER_INFO = POINTER_INFO::default();
-    if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
-        return;
+    unsafe {
+        // Safety: GetPointerInfo is safe-ish
+        if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
+            return;
+        }
     }
     let mut guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
     if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
@@ -171,14 +189,15 @@ static _WINDOW_RECT: Mutex<RECT> = Mutex::new(RECT {
     bottom: 0,
 });
 const WM_WINDOW_CHANGED_LIST: [u32; 2] = [WM_MOVE, WM_SIZE];
-unsafe fn update_window_rect(hwnd: HWND, _: LPARAM) {
+fn update_window_rect(hwnd: HWND, _: LPARAM) {
     let mut rect: RECT = RECT::default();
-
-    if let Err(e) = GetWindowRect(hwnd, &mut rect) {
-        dprintln!("Toucca update window rect error: {:?}", e);
-        return;
+    unsafe {
+        // Safety: GetWindowRect is safe-ish
+        if let Err(e) = GetWindowRect(hwnd, &mut rect) {
+            dprintln!("Toucca update window rect error: {:?}", e);
+            return;
+        }
     }
-
     *_WINDOW_RECT.lock().dbg_unwrap() = rect;
     dprintln!(dbg, "Updated rect: {:?}", rect);
 }
@@ -191,6 +210,7 @@ unsafe extern "system" fn wnd_proc_hook(
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
+    // Safety: _FALLBACK_WND_PROC is set once per process
     if WM_POINTER_LIST.contains(&msg) {
         update_pointer(hwnd, w_param);
     } else if WM_WINDOW_CHANGED_LIST.contains(&msg) {
@@ -200,6 +220,7 @@ unsafe extern "system" fn wnd_proc_hook(
 }
 
 unsafe fn touch_init() -> HWND {
+    // Safety: guaranteed to be called once per process
     let hwnd: HWND = get_window_handle();
     if !IsMouseInPointerEnabled().as_bool() {
         dprintln!("Toucca: Enable mouse in pointer");
@@ -209,6 +230,7 @@ unsafe fn touch_init() -> HWND {
     if prev_wnd_proc != 0 {
         _FALLBACK_WND_PROC = std::mem::transmute(prev_wnd_proc);
     }
+    #[allow(clippy::fn_to_numeric_cast)] // SetWindowLongPtrW just requires a long ptr
     SetWindowLongPtrW(hwnd, GWLP_WNDPROC, wnd_proc_hook as isize);
     dprintln!("Hooked WndProc for {:?}", hwnd);
     hwnd
@@ -233,15 +255,15 @@ fn parse_point(abs_x: f64, abs_y: f64) -> Vec<usize> {
     let (rel_x, rel_y) = (rel_y, -rel_x);
     let (dist, angle) = to_polar(rel_x, rel_y);
     let section = {
-        if angle < 0.0 // right ring 
+        if angle < 0.0
+        // right ring
         {
             (-angle) / PI * 30.0
-        }
-        else {
+        } else {
             angle / PI * 30.0 + 30.0
         }
     } as usize;
-    
+
     dprintln!(dbg, "Got section {}, dist {}", section, dist);
     if dist > radius {
         return vec![];
@@ -253,7 +275,7 @@ fn parse_point(abs_x: f64, abs_y: f64) -> Vec<usize> {
     }
 }
 
-unsafe fn touch_loop(cell_pressed: &mut [bool; 240]) {
+fn touch_loop(cell_pressed: &mut [bool; 240]) {
     cell_pressed.fill(false);
     let read_guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
     for (_, (x, y)) in read_guard.iter() {
@@ -263,17 +285,20 @@ unsafe fn touch_loop(cell_pressed: &mut [bool; 240]) {
             cell_pressed[cell] = true;
         }
     }
-    for i in 0..240 {
-        if GetAsyncKeyState(CONFIG.vk_cell[i]) != 0 {
-            cell_pressed[i] = true;
+    for (i, cell_state) in cell_pressed.iter_mut().enumerate() {
+        unsafe {
+            // Safety: CONFIG is "const" & GetAsyncKeyState is safe-ish
+            if GetAsyncKeyState(CONFIG.vk_cell[i]) != 0 {
+                *cell_state = true;
+            }
         }
     }
 }
 
-static mut _TOUCH_THREAD_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+static _TOUCH_THREAD_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_touch_start(callback: extern "C" fn(*mut bool)) {
+pub extern "system" fn mercury_io_touch_start(callback: extern "C" fn(*mut bool)) {
     if let Some(handle) = &*_TOUCH_THREAD_HANDLE.lock().dbg_unwrap() {
         if !handle.is_finished() {
             return;
@@ -292,4 +317,4 @@ pub unsafe extern "system" fn mercury_io_touch_start(callback: extern "C" fn(*mu
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn mercury_io_touch_set_leds(_: *mut c_void) {}
+pub extern "system" fn mercury_io_touch_set_leds(_: *mut c_void) {}
