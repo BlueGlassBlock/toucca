@@ -153,7 +153,7 @@ unsafe fn get_window_handle() -> HWND {
     _HWND
 }
 
-static _ACTIVE_POINTERS: Lazy<Mutex<HashMap<u32, (usize, usize)>>> =
+static _ACTIVE_POINTERS: Lazy<Mutex<HashMap<u32, (i32, i32)>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 const WM_POINTER_LIST: [u32; 7] = [
     WM_POINTERDOWN,
@@ -177,7 +177,7 @@ fn update_pointer(_: HWND, param: WPARAM) {
         guard.remove(&ptr_info.pointerId);
     } else {
         let POINT { x, y } = ptr_info.ptPixelLocation;
-        guard.insert(ptr_info.pointerId, (x as usize, y as usize));
+        guard.insert(ptr_info.pointerId, (x, y));
     }
     drop(guard);
 }
