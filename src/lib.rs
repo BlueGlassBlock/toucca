@@ -9,7 +9,7 @@ use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use config::TouccaConfig;
+use config::{TouccaConfig, TouccaMode, TouccaRelativeConfig};
 use once_cell::sync::Lazy;
 use utils::{lo_word, DebugUnwrap};
 
@@ -41,9 +41,6 @@ pub extern "system" fn mercury_io_init() -> HRESULT {
     unsafe {
         // Safety: CONFIG is initialized once per process (daemon and game process)
         CONFIG = TouccaConfig::load(&HSTRING::from(".\\segatools.ini"));
-        if let &config::TouccaMode::Relative(..) = &CONFIG.touch.mode {
-            panic!("Relative touch mode is not supported");
-        }
     }
 
     S_OK
@@ -175,6 +172,14 @@ fn update_pointer(_: HWND, param: WPARAM) {
     let mut guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
     if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
         guard.remove(&ptr_info.pointerId);
+        unsafe {
+            // Safety: CONFIG is "const"
+            if let TouccaMode::Relative(TouccaRelativeConfig { map_lock, .. }) = &CONFIG.touch.mode
+            {
+                let mut map_guard = map_lock.lock().dbg_unwrap();
+                map_guard.remove(&ptr_info.pointerId);
+            }
+        }
     } else {
         let POINT { x, y } = ptr_info.ptPixelLocation;
         guard.insert(ptr_info.pointerId, (x, y));
@@ -242,14 +247,19 @@ fn to_polar(x: f64, y: f64) -> (f64, f64) {
     (r, theta)
 }
 
-fn parse_point(abs_x: f64, abs_y: f64) -> Vec<usize> {
+fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     use std::f64::consts::*;
+    let radius_compensation: f64 = unsafe {
+        // Safety: CONFIG is "const"
+        CONFIG.touch.radius_compensation
+    } as f64;
     let rect = *_WINDOW_RECT.lock().dbg_unwrap();
     let center: (f64, f64) = (
         (rect.right + rect.left) as f64 / 2.0,
         (rect.bottom + rect.top) as f64 / 2.0,
     );
-    let radius = std::cmp::min(rect.right - rect.left, rect.bottom - rect.top) as f64 / 2.0 + 30.0;
+    let radius = std::cmp::min(rect.right - rect.left, rect.bottom - rect.top) as f64 / 2.0
+        + radius_compensation;
     let (rel_x, rel_y): (f64, f64) = (abs_x - center.0, center.1 - abs_y); // use center.y - abs_y to get Cartesian coordinate
                                                                            // rotate by 90 degrees
     let (rel_x, rel_y) = (rel_y, -rel_x);
@@ -271,16 +281,16 @@ fn parse_point(abs_x: f64, abs_y: f64) -> Vec<usize> {
     unsafe {
         let ring: usize = (CONFIG.touch.divisions as f64 * dist / radius) as usize;
         dprintln!(dbg, "Got section {}, ring {}", section, ring);
-        CONFIG.touch.mode.to_cells(section, ring)
+        CONFIG.touch.mode.to_cells(ptr_id, section, ring)
     }
 }
 
 fn touch_loop(cell_pressed: &mut [bool; 240]) {
     cell_pressed.fill(false);
     let read_guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
-    for (_, (x, y)) in read_guard.iter() {
+    for (ptr_id, (x, y)) in read_guard.iter() {
         dprintln!(dbg, "Got touch {}, {}", x, y);
-        let cells = parse_point(*x as f64, *y as f64);
+        let cells = parse_point(*ptr_id, *x as f64, *y as f64);
         for cell in cells {
             cell_pressed[cell] = true;
         }

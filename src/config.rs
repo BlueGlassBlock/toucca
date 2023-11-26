@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::ops::Add;
+use std::sync::Mutex;
+
 use windows::core::*;
 use windows::Win32::System::WindowsProgramming::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -6,28 +10,52 @@ use crate::dprintln;
 
 pub struct TouccaTouchConfig {
     pub divisions: usize,
+    pub radius_compensation: i32,
     pub mode: TouccaMode, // 0 - Absolute, 1 - Relative
 }
 
+#[derive(Debug)]
+pub struct TouccaRelativeConfig {
+    pub start: usize,
+    pub threshold: usize,
+    pub map_lock: Mutex<HashMap<u32, (usize, usize)>>, // pointer id -> (physical ring, virtual ring)
+}
+
+#[derive(Debug)]
 pub enum TouccaMode {
     Absolute([(usize, usize); 4]),
-    Relative(usize),
+    Relative(TouccaRelativeConfig),
 }
 
 impl TouccaMode {
-    pub fn to_cells(&self, section_index: usize, ring: usize) -> Vec<usize> {
+    fn map_section_and_ring(section: usize, ring: usize) -> usize {
+        ring * 30 + section % 30 + if section >= 30 { 120 } else { 0 }
+    }
+    pub fn to_cells(&self, ptr_id: u32, section: usize, ring: usize) -> Vec<usize> {
         match self {
-            Self::Relative(..) => {
-                panic!("Relative touch mode is not supported");
+            Self::Relative(cfg) => {
+                let TouccaRelativeConfig {
+                    start,
+                    threshold,
+                    map_lock,
+                } = &cfg;
+                let mut guard = map_lock.lock().unwrap();
+                if let Some((p_ring, v_ring)) = guard.get(&ptr_id) {
+                    let diff = (ring as i64 - *p_ring as i64) / *threshold as i64;
+                    let v_ring = (*v_ring as i64).add(diff).clamp(0, 3) as usize;
+                    guard.insert(ptr_id, (ring, v_ring));
+                    vec![Self::map_section_and_ring(section, v_ring)]
+                } else {
+                    guard.insert(ptr_id, (ring, *start));
+                    vec![Self::map_section_and_ring(section, *start)]
+                }
             }
             Self::Absolute(ranges) => {
                 let mut res = vec![];
                 for (i, (st, end)) in ranges.iter().enumerate() {
                     if *st <= ring && ring <= *end {
-                        res.push(
-                            i * 30 + section_index % 30 + if section_index >= 30 { 120 } else { 0 },
-                        );
-                        dprintln!("{} {} -> {}", section_index, i, res.last().unwrap());
+                        res.push(Self::map_section_and_ring(i, ring));
+                        dprintln!("{} {} -> {}", section, i, res.last().unwrap());
                     }
                 }
                 res
@@ -52,6 +80,8 @@ impl TouccaTouchConfig {
         if !(4..=20).contains(&divisions) {
             panic!("Invalid touch divisions");
         }
+        let radius_compensation =
+            GetPrivateProfileIntW(h!("touch"), h!("radius_compensation"), 0, filename);
         let mode = match GetPrivateProfileIntW(h!("touch"), h!("mode"), 0, filename) as usize {
             0 => {
                 let mut ranges = [(0, 0); 4];
@@ -93,18 +123,27 @@ impl TouccaTouchConfig {
                 TouccaMode::Absolute(ranges)
             }
             1 => {
-                let start = GetPrivateProfileIntW(h!("touch"), h!("radius"), 1, filename) as usize;
+                let start =
+                    GetPrivateProfileIntW(h!("touch"), h!("relative_start"), 1, filename) as usize;
                 // check start in 0-3
                 if start > 3 {
                     panic!("Invalid relative touch start position");
                 }
-                TouccaMode::Relative(start)
+                let threshold =
+                    GetPrivateProfileIntW(h!("touch"), h!("relative_threshold"), 1, filename)
+                        as usize;
+                TouccaMode::Relative(TouccaRelativeConfig {
+                    start,
+                    threshold,
+                    map_lock: Mutex::new(HashMap::new()),
+                })
             }
             _ => {
                 panic!("Invalid touch mode");
             }
         };
-        Self { divisions, mode }
+        dprintln!("Using touch mode: {:?}", mode);
+        Self { divisions, radius_compensation, mode }
     }
 }
 
@@ -144,6 +183,7 @@ impl TouccaConfig {
             vk_cell: [0; 240],
             touch: TouccaTouchConfig {
                 divisions: 8,
+                radius_compensation: 30,
                 mode: TouccaMode::Absolute([(0, 0); 4]),
             },
         }

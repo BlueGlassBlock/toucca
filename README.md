@@ -1,4 +1,5 @@
 # Toucca
+
 > Touch support for WACCA.
 
 ## Configuration
@@ -34,7 +35,11 @@ If the ring value is not supplied or set to -1, will automatically determine fro
 
 ### Relative mode config
 
-Not implemented yet.
+```ini
+[touch]
+relative_start = 1 # Start of relative ring
+relative_threshold = 1 # Physical ring required to cross to change mapped ring
+```
 
 ## Details
 
@@ -42,7 +47,9 @@ Not implemented yet.
 
 By default, the radius of the play area is determined by window width, which may cause weirdness when the play area is not completely displayed.
 
-An extra 30px is added to the radius to compensate for this.
+By default, an extra 30px is added to the radius to compensate for this.
+
+You can change compensation radius with config `touch.radius_compensation`, which could be positive or negative.
 
 ## License
 
