@@ -11,6 +11,7 @@ use crate::dprintln;
 pub struct TouccaTouchConfig {
     pub divisions: usize,
     pub radius_compensation: i32,
+    pub pointer_radius: u32,
     pub mode: TouccaMode, // 0 - Absolute, 1 - Relative
 }
 
@@ -28,10 +29,26 @@ pub enum TouccaMode {
 }
 
 impl TouccaMode {
+    fn flip_left_ring(section: usize) -> usize {
+        if section >= 30 {30 + 59 - section} else { section }
+    }
+    pub fn expand_section_with_radius(radius: u32, section: usize) -> Vec<usize> {
+        let mut res = vec![section];
+        let section = 60 + TouccaMode::flip_left_ring(section);
+        for to_add in 1..radius as usize {
+            let left = (section + to_add) % 60;
+            let right = (section - to_add) % 60;
+            res.push(TouccaMode::flip_left_ring(left));
+            res.push(TouccaMode::flip_left_ring(right));
+        }
+        res
+    }
+
     fn map_section_and_ring(section: usize, ring: usize) -> usize {
         ring * 30 + section % 30 + if section >= 30 { 120 } else { 0 }
     }
-    pub fn to_cells(&self, ptr_id: u32, section: usize, ring: usize) -> Vec<usize> {
+
+    fn convert_single(&self, ptr_id: u32, section: usize, ring: usize) -> Vec<usize> {
         match self {
             Self::Relative(cfg) => {
                 let TouccaRelativeConfig {
@@ -62,6 +79,14 @@ impl TouccaMode {
             }
         }
     }
+
+    pub fn to_cells(&self, ptr_id: u32, section: usize, ring: usize, radius: u32) -> Vec<usize> {
+        let mut res = vec![];
+        for section in Self::expand_section_with_radius(radius, section) {
+            res.extend(self.convert_single(ptr_id, section, ring));
+        }
+        res
+    }
 }
 
 pub struct TouccaConfig {
@@ -82,6 +107,11 @@ impl TouccaTouchConfig {
         }
         let radius_compensation =
             GetPrivateProfileIntW(h!("touch"), h!("radius_compensation"), 0, filename);
+        let pointer_radius = GetPrivateProfileIntW(h!("touch"), h!("pointer_radius"), 1, filename);
+        if !(1..=10).contains(&pointer_radius) {
+            panic!("Invalid finger radius: {}", pointer_radius);
+        }
+        let pointer_radius = pointer_radius as u32;
         let mode = match GetPrivateProfileIntW(h!("touch"), h!("mode"), 0, filename) as usize {
             0 => {
                 let mut ranges = [(0, 0); 4];
@@ -143,7 +173,7 @@ impl TouccaTouchConfig {
             }
         };
         dprintln!("Using touch mode: {:?}", mode);
-        Self { divisions, radius_compensation, mode }
+        Self { divisions, pointer_radius, radius_compensation, mode }
     }
 }
 
@@ -183,6 +213,7 @@ impl TouccaConfig {
             vk_cell: [0; 240],
             touch: TouccaTouchConfig {
                 divisions: 8,
+                pointer_radius: 1,
                 radius_compensation: 30,
                 mode: TouccaMode::Absolute([(0, 0); 4]),
             },

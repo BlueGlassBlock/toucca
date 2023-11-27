@@ -265,9 +265,8 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     let (rel_x, rel_y) = (rel_y, -rel_x);
     let (dist, angle) = to_polar(rel_x, rel_y);
     let section = {
-        if angle < 0.0
-        // right ring
-        {
+        if angle < 0.0 {
+            // right ring
             (-angle) / PI * 30.0
         } else {
             angle / PI * 30.0 + 30.0
@@ -281,7 +280,7 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     unsafe {
         let ring: usize = (CONFIG.touch.divisions as f64 * dist / radius) as usize;
         dprintln!(dbg, "Got section {}, ring {}", section, ring);
-        CONFIG.touch.mode.to_cells(ptr_id, section, ring)
+        CONFIG.touch.mode.to_cells(ptr_id, section, ring, CONFIG.touch.pointer_radius)
     }
 }
 
