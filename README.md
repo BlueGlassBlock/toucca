@@ -4,6 +4,22 @@
 
 English | [简体中文](README.zh.md)
 
+## Setup
+
+Assuming you already have the game process running and working keyboard input (Being able to main game with number and letter keys).
+
+Download latest dll release that fits your segatool API version [here](https://github.com/BlueGlassBlock/toucca/releases/latest).
+
+Rename the release file to `toucca.dll`(the filename which will be filled into `segatools.ini`), put it alongside `mercuryhook.dll`, edit `segatools.ini`.
+
+```ini
+[touch]
+enable=1 # Remember to enable it
+
+[mercuryio]
+path=toucca.dll # Or whatever you renamed it to
+```
+
 ## Configuration
 
 Configuration is done via `segatools.ini`.
@@ -62,6 +78,14 @@ By default, the radius of the play area is determined by window width, which may
 By default, an extra 30px is added to the radius to compensate for this.
 
 You can change compensation radius with config `touch.radius_compensation`, which could be positive or negative.
+
+## Build Yourself
+
+I have only tried building on Windows since the game is Windows only. :)
+
+Cross-compiling to Linux should be possible, but I haven't tried it.
+
+With Rust installed with [rustup](https://rustup.rs/), run `cargo build --release` to build.
 
 ## License
 

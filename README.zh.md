@@ -4,6 +4,20 @@
 
 [English](README.md) | 简体中文
 
+## 安装
+
+假设你已经有了游戏主体，并且能够使用键盘输入（使用数字和字母键进行游戏）。
+
+[从这里下载](https://github.com/BlueGlassBlock/toucca/releases/latest)最新的 dll 发布版本，放在 `mercuryhook.dll` 旁边，重命名为 `toucca.dll`（这个文件名将会被填入 `segatools.ini`），编辑 `segatools.ini`。
+
+```ini
+[touch]
+enable=1 # 记得启用
+
+[mercuryio]
+path=toucca.dll # 或者你重命名的名字
+```
+
 ## 配置
 
 配置文件为 `segatools.ini`。
@@ -62,6 +76,12 @@ relative_threshold = 1 # 需要跨越的物理环数才能切换到下一个相�
 默认情况下，额外的 30px 被添加到半径中以补偿这一点。
 
 你可以通过 `touch.radius_compensation` 来调整这个值。
+
+## 自行构建
+
+我只在 Windows 上进行过构建（毕竟原框体是基于 Windows 的），不过 Linux 应该也能构建。
+
+使用 [rustup](https://rustup.rs/) 安装 Rust，然后使用 `cargo build --release` 进行构建即可在 `target/release/toucca.dll` 找到产物。
 
 ## 许可协议
 
