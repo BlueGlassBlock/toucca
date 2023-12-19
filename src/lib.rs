@@ -16,7 +16,8 @@ use utils::{lo_word, DebugUnwrap};
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::*;
-use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::Pointer::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -145,7 +146,7 @@ unsafe fn get_window_handle() -> HWND {
     EnumWindows(Some(_enum_window), LPARAM(proc_id as isize)).dbg_unwrap();
     dprintln!("Get window handle: {:?}", _HWND);
     let mut guard = _WINDOW_RECT.lock().dbg_unwrap();
-    GetWindowRect(_HWND, &mut *guard).dbg_unwrap();
+    GetClientRect(_HWND, &mut *guard).dbg_unwrap();
     drop(guard);
     _HWND
 }
@@ -168,6 +169,7 @@ fn update_pointer(_: HWND, param: WPARAM) {
         if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
             return;
         }
+        ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocation);
     }
     let mut guard = _ACTIVE_POINTERS.lock().dbg_unwrap();
     if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
@@ -197,8 +199,8 @@ const WM_WINDOW_CHANGED_LIST: [u32; 2] = [WM_MOVE, WM_SIZE];
 fn update_window_rect(hwnd: HWND, _: LPARAM) {
     let mut rect: RECT = RECT::default();
     unsafe {
-        // Safety: GetWindowRect is safe-ish
-        if let Err(e) = GetWindowRect(hwnd, &mut rect) {
+        // Safety: GetClientRect is safe-ish
+        if let Err(e) = GetClientRect(hwnd, &mut rect) {
             dprintln!("Toucca update window rect error: {:?}", e);
             return;
         }
@@ -258,6 +260,7 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
         (rect.right + rect.left) as f64 / 2.0,
         (rect.bottom + rect.top) as f64 / 2.0,
     );
+    dprintln!(dbg, "Got center {}, {}", center.0, center.1);
     let radius = std::cmp::min(rect.right - rect.left, rect.bottom - rect.top) as f64 / 2.0
         + radius_compensation;
     let (rel_x, rel_y): (f64, f64) = (abs_x - center.0, center.1 - abs_y); // use center.y - abs_y to get Cartesian coordinate

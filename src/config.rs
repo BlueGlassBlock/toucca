@@ -71,7 +71,7 @@ impl TouccaMode {
                 let mut res = vec![];
                 for (i, (st, end)) in ranges.iter().enumerate() {
                     if *st <= ring && ring <= *end {
-                        res.push(Self::map_section_and_ring(i, ring));
+                        res.push(Self::map_section_and_ring(section, i));
                         dprintln!("{} {} -> {}", section, i, res.last().unwrap());
                     }
                 }
