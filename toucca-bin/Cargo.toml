@@ -1,0 +1,15 @@
+[package]
+name = "toucca-bin"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+toucca = { path = "../toucca" }
+windows = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serialport.workspace = true
+ctrlc = "3.4.2"
+wio = "0.2.2"

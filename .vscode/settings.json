@@ -16,6 +16,7 @@
         "POINTERLEAVE",
         "POINTERUP",
         "POINTERUPDATE",
+        "segatools",
         "Toucca",
         "WNDPROC",
         "WPARAM"
