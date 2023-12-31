@@ -1,30 +1,29 @@
 mod constant;
 mod pack;
-mod privileged;
 
 use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use serial::SerialPort;
 use serialport as serial;
 use tracing::{debug, error, info, instrument};
 
-use toucca::window::*;
-use toucca::*;
+use super::window::*;
+use super::*;
+use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::*;
-use windows::Win32::Foundation::*;
 
 struct TouccaState {
     ports: [serial::COMPort; 2],
     startup_complete: bool,
-    touch_areas: Arc<Mutex<HashSet<usize>>>,
-    exit: Arc<Mutex<bool>>,
+    touch_areas: HashSet<usize>,
+    hwnd: Option<HWND>,
 }
 
 impl TouccaState {
+    #[instrument]
     fn new() -> Self {
         info!("Trying to start serial ports");
         let com_l = serial::new("COM5", 115200)
@@ -38,11 +37,11 @@ impl TouccaState {
             ports: [com_l, com_r],
             startup_complete: false,
             touch_areas: Default::default(),
-            exit: Default::default(),
+            hwnd: None,
         }
     }
 
-    #[tracing::instrument(skip_all, fields(side = side))]
+    #[instrument(skip_all, fields(side = side))]
     fn make_resp(side: usize, head: u8, data: &[u8]) -> (Option<bool>, Option<Vec<u8>>) {
         let mut startup_complete = None;
         let mut resp_data = None;
@@ -151,16 +150,11 @@ impl TouccaState {
             return Ok(());
         }
         let mut packs: [pack::Pack; 2] = [[0; 36], [0; 36]];
-        let guard = self
-            .touch_areas
-            .lock()
-            .expect("touch_recv lock is poisoned!");
-        for &area in guard.iter() {
+        for &area in self.touch_areas.iter() {
             let side = if area >= 120 { 0 } else { 1 };
             let index = area % 120;
             pack::set(&mut packs[side], index, true);
         }
-        drop(guard);
         for (side, port) in self.ports.iter_mut().enumerate() {
             let pack = pack::prepare(packs[side]);
             port.write_all(&pack)?;
@@ -168,10 +162,24 @@ impl TouccaState {
         Ok(())
     }
 
-    fn cycle(&mut self) {
+    #[instrument(skip_all)]
+    unsafe fn cycle(&mut self) {
         use std::thread::sleep;
         use std::time::Duration;
-        while !self.exit.lock().expect("exit lock is poisoned!").clone() {
+        loop {
+            // check whether the window is still alive
+            if let Some(handle) = self.hwnd {
+                if !IsWindow(handle).as_bool() {
+                    self.hwnd = None;
+                }
+            }
+            if self.hwnd.is_none() {
+                self.hwnd = get_window_handle(GetCurrentProcessId());
+                if let Some(hwnd) = self.hwnd {
+                    hook_wnd_proc(hwnd);
+                }
+            }
+            self.touch_areas = window::get_active_areas();
             if let Err(e) = self.read_and_update() {
                 error!("Error reading and updating: {}", e);
             }
@@ -183,80 +191,7 @@ impl TouccaState {
     }
 }
 
-unsafe fn search_mercury_once(token: HANDLE, areas: &Arc<Mutex<HashSet<usize>>>, proc_id: &mut u32, hwnd: &mut Option<HWND>) -> Result<()> {
-    if *proc_id == 0 {
-        *proc_id = privileged::find_mercury_proc(token)?;
-    }
-    if *proc_id != 0 && hwnd.is_none() {
-        if let Some(handle) = get_window_handle(*proc_id) {
-            *hwnd = Some(handle);
-            hook_wnd_proc(handle);
-        } else {
-            *proc_id = 0;
-        }
-    }
-    // check whether the process is still alive
-    if *proc_id != 0 {
-        if let Err(e) = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, *proc_id) {
-            *proc_id = 0;
-            *hwnd = None;
-            info!("Invalid process: {e}");
-        }
-    }
-    // check whether the window is still alive
-    if let Some(handle) = *hwnd {
-        if !IsWindow(handle).as_bool() {
-            *proc_id = 0;
-            *hwnd = None;
-        }
-    }
-    *areas.lock().unwrap() = window::get_active_areas();
-    std::thread::sleep(std::time::Duration::from_micros(8));
-    Ok(())
-}
-
-#[instrument(skip_all)]
-unsafe fn window_search_cycle(token: HANDLE, areas: Arc<Mutex<HashSet<usize>>>, exit: Arc<Mutex<bool>>) {
-    let mut proc_id: u32 = 0;
-    let mut hwnd: Option<HWND> = None;
-    while !exit.lock().expect("exit lock is poisoned!").clone() {
-        if let Err(e) = search_mercury_once(token, &areas, &mut proc_id, &mut hwnd) {
-            proc_id = 0;
-            hwnd = None;
-            error!("Error searching for Mercury: {}", e);
-        }
-    }
-}
-
-fn setup_log() {
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(if cfg!(debug_assertions) {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        })
-        .with_thread_names(true)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
-}
-
-fn main() {
-    setup_log();
-    privileged::check_privilege();
-    load_segatools_config();
+pub fn start_serial() -> JoinHandle<()> {
     let mut state = TouccaState::new();
-    let (touch_areas, exit) = (state.touch_areas.clone(), state.exit.clone());
-
-    let _ctrlc_exit = exit.clone();
-    ctrlc::set_handler(move || {
-        *_ctrlc_exit.lock().expect("exit lock is poisoned!") = true;
-    })
-    .expect("Failed to set Ctrl-C handler");
-    let privileged_token = privileged::check_privilege();
-    let state_cycle_handle = std::thread::spawn(move || state.cycle());
-    let window_search_handle = std::thread::spawn(move || unsafe {
-        window_search_cycle(privileged_token, touch_areas, exit);
-    });
-    state_cycle_handle.join().unwrap();
-    window_search_handle.join().unwrap();
+    std::thread::spawn(move || unsafe { state.cycle() })
 }

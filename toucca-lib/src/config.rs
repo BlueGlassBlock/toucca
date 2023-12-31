@@ -91,6 +91,7 @@ impl TouccaMode {
 }
 
 pub struct TouccaConfig {
+    pub is_serial: bool,
     pub vk_test: i32,
     pub vk_service: i32,
     pub vk_coin: i32,
@@ -190,6 +191,7 @@ impl TouccaConfig {
             );
         }
         Self {
+            is_serial: GetPrivateProfileIntW(h!("touch"), h!("enable"), 1, filename) == 0,
             vk_test: GetPrivateProfileIntW(h!("io4"), h!("test"), VK_INSERT.0.into(), filename),
             vk_service: GetPrivateProfileIntW(h!("io4"), h!("test"), VK_DELETE.0.into(), filename),
             vk_coin: GetPrivateProfileIntW(h!("io4"), h!("coin"), VK_HOME.0.into(), filename),
@@ -206,6 +208,7 @@ impl TouccaConfig {
     }
     pub const fn default() -> Self {
         Self {
+            is_serial: false,
             vk_test: VK_INSERT.0 as i32,
             vk_service: VK_DELETE.0 as i32,
             vk_coin: VK_HOME.0 as i32,
