@@ -23,8 +23,8 @@ unsafe extern "system" fn _enum_window(hwnd: HWND, param: LPARAM) -> BOOL {
         if GetWindowRect(hwnd, &mut rect).is_err() {
             return TRUE;
         }
-        debug!("Found target HWND, {:?}", rect);
         if (rect.right - rect.left) <= 0 || (rect.bottom - rect.top) <= 0 {
+            debug!("Found target HWND, {:?}", rect);
             return TRUE;
         }
         hwnd_ptr_proc_id.0 = Some(hwnd);
@@ -39,7 +39,9 @@ pub fn get_window_handle(proc_id: u32) -> Option<HWND> {
     unsafe {
         EnumWindows(Some(_enum_window), LPARAM(ptr_addr as isize)).unwrap();
         let hwnd = hwnd_proc_id.0;
-        debug!("Get window handle of {}: {:?}", proc_id, hwnd);
+        if let Some(hwnd) = hwnd {
+            debug!("Get window handle of {}: {:?}", proc_id, hwnd);
+        }
         return hwnd;
     }
 }
@@ -149,9 +151,7 @@ fn to_polar(x: f64, y: f64) -> (f64, f64) {
 #[instrument]
 fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     use std::f64::consts::*;
-    let radius_compensation: f64 = unsafe {
-        crate::CONFIG.touch.radius_compensation
-    } as f64;
+    let radius_compensation: f64 = unsafe { crate::CONFIG.touch.radius_compensation } as f64;
     let rect = *_WINDOW_RECT.lock().unwrap();
     let center: (f64, f64) = (
         (rect.right + rect.left) as f64 / 2.0,

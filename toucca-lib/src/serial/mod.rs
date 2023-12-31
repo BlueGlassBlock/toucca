@@ -22,6 +22,8 @@ struct TouccaState {
     hwnd: Option<HWND>,
 }
 
+// FIXME: the cell mapping is INCORRECT, and serial isn't working until serial test (expecting touch pack on init?)
+
 impl TouccaState {
     #[instrument]
     fn new() -> Self {
@@ -42,9 +44,10 @@ impl TouccaState {
     }
 
     #[instrument(skip_all, fields(side = side))]
-    fn make_resp(side: usize, head: u8, data: &[u8]) -> (Option<bool>, Option<Vec<u8>>) {
+    fn make_resp(side: usize, data: &[u8]) -> (Option<bool>, Option<Vec<u8>>) {
         let mut startup_complete = None;
         let mut resp_data = None;
+        let head = data[0];
         match head {
             constant::GET_SYNC_BOARD_VER => {
                 debug!("GET_SYNC_BOARD_VER");
@@ -127,15 +130,13 @@ impl TouccaState {
             if to_read == 0 {
                 continue;
             }
-            let head = {
-                let mut buf = [0; 1];
-                port.read(&mut buf)?;
-                buf[0]
-            };
-            let mut buf = vec![0; to_read - 1];
+            let mut buf = vec![0; to_read];
             port.read(&mut buf)?;
-            let (startup_complete, resp) = Self::make_resp(side, head, &buf);
+            let (startup_complete, resp) = Self::make_resp(side, &buf);
             if let Some(startup_complete) = startup_complete {
+                if self.startup_complete != startup_complete {
+                    info!("Update startup complete status: {}", startup_complete);
+                }
                 self.startup_complete = startup_complete;
             }
             if let Some(resp) = resp {
