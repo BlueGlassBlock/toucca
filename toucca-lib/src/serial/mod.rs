@@ -22,7 +22,7 @@ struct TouccaState {
     hwnd: Option<HWND>,
 }
 
-// FIXME: the cell mapping is INCORRECT, and serial isn't working until serial test (expecting touch pack on init?)
+// FIXME: the cell mapping reversed in L-R, and serial isn't working until serial test (expecting touch pack on init?)
 
 impl TouccaState {
     #[instrument]
@@ -153,7 +153,8 @@ impl TouccaState {
         let mut packs: [pack::Pack; 2] = [[0; 36], [0; 36]];
         for &area in self.touch_areas.iter() {
             let side = if area >= 120 { 0 } else { 1 };
-            let index = area % 120;
+            let mut index = area % 120;
+            index += index / 5 * 3 + 8;
             pack::set(&mut packs[side], index, true);
         }
         for (side, port) in self.ports.iter_mut().enumerate() {

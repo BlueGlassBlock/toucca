@@ -1,5 +1,8 @@
 use std::io::Write;
 
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{layer::SubscriberExt, Layer, util::SubscriberInitExt};
+
 pub struct WinDebugWriter;
 
 impl Write for WinDebugWriter {
@@ -23,6 +26,12 @@ impl WinDebugWriter {
     }
 }
 
+const LEVEL_FILTER: LevelFilter = if cfg!(debug_assertions) {
+    LevelFilter::DEBUG
+} else {
+    LevelFilter::INFO
+};
+
 pub fn init_log() {
     std::panic::set_hook(Box::new(move |info| {
         WinDebugWriter
@@ -30,14 +39,21 @@ pub fn init_log() {
             .unwrap();
     }));
 
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(WinDebugWriter::new)
-        .with_max_level(if cfg!(debug_assertions) {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        })
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
+    let file_appender = tracing_appender::rolling::daily(".", "toucca.log");
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(WinDebugWriter::new)
+                .without_time()
+                .with_filter(LEVEL_FILTER),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(file_appender)
+                .with_ansi(false)
+                .with_filter(LEVEL_FILTER),
+        )
+        .init();
 }

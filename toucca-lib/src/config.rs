@@ -6,7 +6,7 @@ use windows::core::*;
 use windows::Win32::System::WindowsProgramming::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 
-use tracing::debug;
+use tracing::{instrument, debug};
 
 pub struct TouccaTouchConfig {
     pub divisions: usize,
@@ -45,8 +45,11 @@ impl TouccaMode {
         res
     }
 
+    #[instrument]
     fn map_section_and_ring(section: usize, ring: usize) -> usize {
-        ring * 30 + section % 30 + if section >= 30 { 120 } else { 0 }
+        let area = ring * 30 + section % 30 + if section >= 30 { 120 } else { 0 };
+        debug!("Area: {area}");
+        area
     }
 
     fn convert_single(&self, ptr_id: u32, section: usize, ring: usize) -> Vec<usize> {

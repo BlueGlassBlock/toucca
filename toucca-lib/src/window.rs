@@ -179,7 +179,6 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     }
     unsafe {
         let ring: usize = (crate::CONFIG.touch.divisions as f64 * dist / radius) as usize;
-        debug!("Section {}, ring {}", section, ring);
         crate::CONFIG
             .touch
             .mode
