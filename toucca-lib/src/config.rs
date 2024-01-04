@@ -105,7 +105,7 @@ pub struct TouccaConfig {
 }
 
 impl TouccaTouchConfig {
-    pub unsafe fn load(filename: &HSTRING) -> Self {
+    pub(crate) unsafe fn load(filename: &HSTRING) -> Self {
         let divisions = GetPrivateProfileIntW(h!("touch"), h!("divisions"), 8, filename) as usize;
         if !(4..=20).contains(&divisions) {
             panic!("Invalid touch divisions");
@@ -183,7 +183,7 @@ impl TouccaTouchConfig {
 }
 
 impl TouccaConfig {
-    pub unsafe fn load(filename: &HSTRING) -> Self {
+    pub(crate) unsafe fn load(filename: &HSTRING) -> Self {
         let mut cells = [0; 240];
         for i in 0..240 {
             cells[i] = GetPrivateProfileIntW(

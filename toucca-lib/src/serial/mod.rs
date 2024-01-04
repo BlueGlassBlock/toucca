@@ -22,7 +22,7 @@ struct TouccaState {
     hwnd: Option<HWND>,
 }
 
-// FIXME: the cell mapping reversed in L-R, and serial isn't working until serial test (expecting touch pack on init?)
+// FIXME: section is sometimes off
 
 impl TouccaState {
     #[instrument]
@@ -36,7 +36,7 @@ impl TouccaState {
             .expect("Failed to open COM6");
         info!("Opened serial ports");
         Self {
-            ports: [com_l, com_r],
+            ports: [com_r, com_l],
             startup_complete: false,
             touch_areas: Default::default(),
             hwnd: None,
@@ -61,7 +61,7 @@ impl TouccaState {
             constant::NEXT_READ => {
                 debug!("NEXT_READ");
                 let mut buf: Option<Vec<u8>> = None;
-                match data.get(2).unwrap_or(&0) {
+                match data.get(3).unwrap_or(&0) {
                     0x30 => {
                         debug!("READ_1");
                         buf = Some(constant::READ_1.as_bytes().into());
@@ -111,7 +111,6 @@ impl TouccaState {
                 debug!("START_AUTO_SCAN");
                 startup_complete = Some(true);
                 resp_data = Some(constant::DATA_201.into());
-                // "start touch thread"
             }
             constant::BEGIN_WRITE => debug!("BEGIN_WRITE"),
             constant::NEXT_WRITE => debug!("NEXT_WRITE"),
@@ -131,7 +130,7 @@ impl TouccaState {
                 continue;
             }
             let mut buf = vec![0; to_read];
-            port.read(&mut buf)?;
+            port.read_exact(&mut buf)?;
             let (startup_complete, resp) = Self::make_resp(side, &buf);
             if let Some(startup_complete) = startup_complete {
                 if self.startup_complete != startup_complete {

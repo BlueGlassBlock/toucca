@@ -42,7 +42,7 @@ pub fn get_window_handle(proc_id: u32) -> Option<HWND> {
         if let Some(hwnd) = hwnd {
             debug!("Get window handle of {}: {:?}", proc_id, hwnd);
         }
-        return hwnd;
+        hwnd
     }
 }
 

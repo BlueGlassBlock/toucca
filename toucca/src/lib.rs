@@ -19,7 +19,7 @@ static mut TRACING_INIT: bool = false;
 #[no_mangle]
 pub extern "system" fn mercury_io_get_api_version() -> u16 {
     unsafe {
-        if TRACING_INIT == false {
+        if !TRACING_INIT {
             log::init_log();
             TRACING_INIT = true;
         }
@@ -115,7 +115,7 @@ static mut _HWND: HWND = HWND(0);
 #[no_mangle]
 pub extern "system" fn mercury_io_touch_init() -> HRESULT {
     unsafe {
-        if _TOUCH_INIT == false {
+        if !_TOUCH_INIT {
             let proc_id = GetCurrentProcessId();
             if let Some(handle) = get_window_handle(proc_id) {
                 _HWND = handle;

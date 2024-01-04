@@ -23,7 +23,7 @@ pub fn prepare(mut pack: Pack) -> Pack {
     pack[0] = 129;
     pack[34] += 1;
     pack[35] = 128;
-    pack[35] = super::pack::checksum(&pack);
+    pack[35] = checksum(&pack);
     if pack[34] > 127 {
         pack[34] = 0;
     }

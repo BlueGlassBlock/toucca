@@ -1,0 +1,57 @@
+name: Build and Upload Artifacts
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Make Dist Directory
+      shell: powershell
+      run: |
+        mkdir dist
+
+    - name: Build - Mercury API v1
+      shell: powershell
+      run: |
+        $env:MERCURY_IO_API_VERSION = 1
+        cargo build
+        cargo build --release
+        cp target/debug/toucca.dll dist/toucca-debug-v1.dll
+        cp target/release/toucca.dll dist/toucca-release-v1.dll
+    
+    - name: Upload v1 artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: API v1
+        path: |
+          target/release/toucca.*
+          target/debug/toucca.*
+    
+    - name: Build Debug - Mercury API v256
+      shell: powershell
+      run: |
+        $env:MERCURY_IO_API_VERSION = 256
+        cargo build
+        cargo build --release
+        cp target/debug/toucca.dll dist/toucca-debug-v256.dll
+        cp target/release/toucca.dll dist/toucca-release-v256.dll
+
+    - name: Upload v256 artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: API v256
+        path: |
+          target/release/toucca.*
+          target/debug/toucca.*
+    
+    - name: Upload Dist Directory
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/**/*
