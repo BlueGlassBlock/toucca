@@ -77,6 +77,20 @@ relative_threshold = 1 # 需要跨越的物理环数才能切换到下一个相�
 
 你可以通过 `touch.radius_compensation` 来调整这个值。
 
+### 串口模式
+
+Toucca 支持使用串口模式与游戏通信。
+
+你需要使用 [com0com](https://sourceforge.net/projects/com0com/) 绑定 COM3 和 COM5，COM4 和 COM6，并同时启用缓冲区溢出。
+
+你可以在 [WACVR](https://github.com/xiaopeng12138/WACVR#serial-not-recommended) 项目中了解更多关于配置的信息。
+
+将 `touch.enable` 设置为 `0` 会禁用基于钩子的触摸输入并自动启用串口输入。
+
+# 禁用 Toucca
+
+如果你想禁用 toucca，请不要将 `touch.enable` 设置为 `0`，而是将 `touch.path` 设置为一个不同的文件。
+
 ## 自行构建
 
 我只在 Windows 上进行过构建（毕竟原框体是基于 Windows 的），不过 Linux 应该也能构建。

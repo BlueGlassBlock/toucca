@@ -79,6 +79,20 @@ By default, an extra 30px is added to the radius to compensate for this.
 
 You can change compensation radius with config `touch.radius_compensation`, which could be positive or negative.
 
+### Serial Mode
+
+Toucca support communicating with serial port to control the game.
+
+You need to bind COM3 and COM5, COM4 and COM6 using [com0com](https://sourceforge.net/projects/com0com/), enabling buffer overrun at the meantime.
+
+Read more about configuration at the [WACVR](https://github.com/xiaopeng12138/WACVR#serial-not-recommended) project.
+
+To enable it, simply set `touch.enable` to `0` to disable the hook-based touch input.
+
+### Disable Toucca
+
+If you want to disable toucca, please don't set `touch.enable` to `0`, instead, set the `path` to a different file.
+
 ## Build Yourself
 
 I have only tried building on Windows since the game is Windows only. :)
