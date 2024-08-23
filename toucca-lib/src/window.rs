@@ -67,7 +67,7 @@ fn update_pointer(_: HWND, param: WPARAM) {
         if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
             return;
         }
-        ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocation);
+        ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocationRaw);
     }
     let mut guard = _ACTIVE_POINTERS.lock().unwrap();
     if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
@@ -78,7 +78,7 @@ fn update_pointer(_: HWND, param: WPARAM) {
             map_guard.remove(&ptr_info.pointerId);
         }
     } else {
-        let POINT { x, y } = ptr_info.ptPixelLocation;
+        let POINT { x, y } = ptr_info.ptPixelLocationRaw;
         guard.insert(ptr_info.pointerId, (x, y));
     }
 }
