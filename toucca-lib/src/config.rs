@@ -1,6 +1,5 @@
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::ops::Add;
-use std::sync::Mutex;
 
 use windows::core::*;
 use windows::Win32::System::WindowsProgramming::*;
@@ -19,7 +18,7 @@ pub struct TouccaTouchConfig {
 pub struct TouccaRelativeConfig {
     pub start: usize,
     pub threshold: usize,
-    pub map_lock: Mutex<HashMap<u32, (usize, usize)>>, // pointer id -> (physical ring, virtual ring)
+    pub map: DashMap<u32, (usize, usize), ahash::RandomState>, // pointer id -> (physical ring, virtual ring)
 }
 
 #[derive(Debug)]
@@ -58,16 +57,16 @@ impl TouccaMode {
                 let TouccaRelativeConfig {
                     start,
                     threshold,
-                    map_lock,
+                    map,
                 } = &cfg;
-                let mut guard = map_lock.lock().unwrap();
-                if let Some((p_ring, v_ring)) = guard.get(&ptr_id) {
-                    let diff = (ring as i64 - *p_ring as i64) / *threshold as i64;
-                    let v_ring = (*v_ring as i64).add(diff).clamp(0, 3) as usize;
-                    guard.insert(ptr_id, (ring, v_ring));
+                if let Some(ring_ref) = map.get(&ptr_id) {
+                    let (p_ring, v_ring) = *ring_ref;
+                    let diff = (ring as i64 - p_ring as i64) / *threshold as i64;
+                    let v_ring = (v_ring as i64).add(diff).clamp(0, 3) as usize;
+                    map.insert(ptr_id, (ring, v_ring));
                     vec![Self::map_section_and_ring(section, v_ring)]
                 } else {
-                    guard.insert(ptr_id, (ring, *start));
+                    map.insert(ptr_id, (ring, *start));
                     vec![Self::map_section_and_ring(section, *start)]
                 }
             }
@@ -170,7 +169,7 @@ impl TouccaTouchConfig {
                 TouccaMode::Relative(TouccaRelativeConfig {
                     start,
                     threshold,
-                    map_lock: Mutex::new(HashMap::new()),
+                    map: DashMap::with_capacity_and_hasher(10, ahash::RandomState::default()),
                 })
             }
             _ => {

@@ -1,6 +1,6 @@
 mod log;
 use std::ffi::c_void;
-use std::ptr::NonNull;
+use std::ptr::{null_mut, NonNull};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
@@ -110,7 +110,7 @@ pub extern "system" fn mercury_io_get_gamebtns(gamebtn: *mut u8) {
 }
 
 static mut _TOUCH_INIT: bool = false;
-static mut _HWND: HWND = HWND(0);
+static mut _HWND: HWND = HWND(null_mut());
 
 #[no_mangle]
 pub extern "system" fn mercury_io_touch_init() -> HRESULT {
@@ -127,26 +127,10 @@ pub extern "system" fn mercury_io_touch_init() -> HRESULT {
     S_OK
 }
 
-fn touch_loop(cell_pressed: &mut [bool; 240]) {
-    cell_pressed.fill(false);
-    let areas = get_active_areas();
-    for area in areas {
-        cell_pressed[area] = true;
-    }
-    for (i, cell_state) in cell_pressed.iter_mut().enumerate() {
-        unsafe {
-            // Safety: CONFIG is "const" & GetAsyncKeyState is safe-ish
-            if GetAsyncKeyState(CONFIG.vk_cell[i]) != 0 {
-                *cell_state = true;
-            }
-        }
-    }
-}
-
 static _TOUCH_THREAD_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 
 #[no_mangle]
-pub extern "system" fn mercury_io_touch_start(callback: extern "C" fn(*mut bool)) {
+pub extern "system" fn mercury_io_touch_start(perform_scan: extern "C" fn(*mut bool)) {
     if let Some(handle) = &*_TOUCH_THREAD_HANDLE.lock().unwrap() {
         if !handle.is_finished() {
             return;
@@ -154,11 +138,13 @@ pub extern "system" fn mercury_io_touch_start(callback: extern "C" fn(*mut bool)
     }
     let handle = std::thread::spawn(move || {
         debug!("Started touch poll thread");
-        let mut cell_pressed: [bool; 240] = [false; 240];
         loop {
-            touch_loop(&mut cell_pressed);
-            callback(cell_pressed.as_mut_ptr());
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            let mut cell_pressed: [bool; 240] = [false; 240];
+            for area in get_active_areas() {
+                cell_pressed[area] = true;
+            }
+            perform_scan(cell_pressed.as_mut_ptr());
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
     });
     *_TOUCH_THREAD_HANDLE.lock().unwrap() = Some(handle);

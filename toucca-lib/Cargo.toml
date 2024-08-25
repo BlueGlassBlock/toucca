@@ -11,3 +11,5 @@ windows = { workspace = true }
 once_cell = { workspace = true }
 serialport = { workspace = true }
 wio = { workspace = true }
+dashmap = { workspace = true }
+ahash = { workspace = true }

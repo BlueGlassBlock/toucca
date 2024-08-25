@@ -1,7 +1,8 @@
+use dashmap::DashMap;
+use dashmap::DashSet;
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::RwLock;
+use tracing::error;
 
 use crate::config::*;
 use crate::lo_word;
@@ -46,8 +47,9 @@ pub fn get_window_handle(proc_id: u32) -> Option<HWND> {
     }
 }
 
-static _ACTIVE_POINTERS: Lazy<Mutex<HashMap<u32, (i32, i32)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static _ACTIVE_POINTERS: Lazy<DashMap<u32, Vec<usize>, ahash::RandomState>> = Lazy::new(|| DashMap::with_capacity_and_hasher(10, Default::default()));
+
+static _ACTIVE_KEY_CELLS: Lazy<DashSet<usize, ahash::RandomState>> = Lazy::new(Default::default);
 
 const WM_POINTER_LIST: [u32; 7] = [
     WM_POINTERDOWN,
@@ -60,30 +62,30 @@ const WM_POINTER_LIST: [u32; 7] = [
 ];
 
 #[instrument(skip_all)]
-fn update_pointer(_: HWND, param: WPARAM) {
+fn update_pointer(param: WPARAM) {
     let mut ptr_info: POINTER_INFO = POINTER_INFO::default();
     unsafe {
         // Safety: GetPointerInfo is safe-ish
         if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
             return;
         }
-        ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocationRaw);
+        if !ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocationRaw).as_bool() {
+            error!("ScreenToClient failed");
+        }
     }
-    let mut guard = _ACTIVE_POINTERS.lock().unwrap();
     if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
         let touch_mode = unsafe { &crate::CONFIG.touch.mode };
-        guard.remove(&ptr_info.pointerId);
-        if let TouccaMode::Relative(TouccaRelativeConfig { map_lock, .. }) = touch_mode {
-            let mut map_guard = map_lock.lock().unwrap();
-            map_guard.remove(&ptr_info.pointerId);
+        _ACTIVE_POINTERS.remove(&ptr_info.pointerId);
+        if let TouccaMode::Relative(TouccaRelativeConfig { map, .. }) = touch_mode {
+            map.remove(&ptr_info.pointerId);
         }
     } else {
         let POINT { x, y } = ptr_info.ptPixelLocationRaw;
-        guard.insert(ptr_info.pointerId, (x, y));
+        _ACTIVE_POINTERS.insert(ptr_info.pointerId, parse_point(ptr_info.pointerId, x as f64, y as f64));
     }
 }
 
-static _WINDOW_RECT: Mutex<RECT> = Mutex::new(RECT {
+static _WINDOW_RECT: RwLock<RECT> = RwLock::new(RECT {
     left: 0,
     right: 0,
     top: 0,
@@ -102,10 +104,25 @@ fn update_window_rect(hwnd: HWND) {
             return;
         }
     }
-    *_WINDOW_RECT.lock().unwrap() = rect;
+    *_WINDOW_RECT.write().unwrap() = rect;
     debug!("Updated rect: {:?}", rect);
 }
 
+const WM_KEY_LIST: [u32; 2] = [WM_KEYDOWN, WM_KEYUP];
+const KEY_MAP: Lazy<DashMap<i32, Vec<usize>>> = Lazy::new(DashMap::new);
+
+#[instrument(skip_all)]
+fn handle_key(msg: u32, w_param: WPARAM) {
+    if let Some(cells) = KEY_MAP.get(&(w_param.0 as i32)) {
+        for cell in cells.iter() {
+            if msg == WM_KEYDOWN {
+                _ACTIVE_KEY_CELLS.insert(*cell);
+            } else {
+                _ACTIVE_KEY_CELLS.remove(cell);
+            }
+        }
+    }
+}
 type WndProc = unsafe fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 static mut _FALLBACK_WND_PROC: WndProc = DefWindowProcW;
 
@@ -123,15 +140,28 @@ unsafe extern "system" fn wnd_proc_hook(
     }
     // Safety: _FALLBACK_WND_PROC is set once per process
     if WM_POINTER_LIST.contains(&msg) {
-        update_pointer(hwnd, w_param);
+        update_pointer(w_param);
     } else if WM_WINDOW_CHANGED_LIST.contains(&msg) {
         update_window_rect(hwnd);
+    } else if WM_KEY_LIST.contains(&msg) {
+        handle_key(msg, w_param)
     }
     _FALLBACK_WND_PROC(hwnd, msg, w_param, l_param)
 }
 
+unsafe fn init_key_map() {
+    for (i, key) in crate::CONFIG.vk_cell.iter().enumerate() {
+        if let Some(mut cells) = KEY_MAP.get_mut(key) {
+            cells.push(i);
+        } else {
+            KEY_MAP.insert(*key, vec![i]);
+        }
+    }
+}
+
 #[instrument(skip_all)]
 pub unsafe fn hook_wnd_proc(hwnd: HWND) {
+    init_key_map();
     update_window_rect(hwnd);
     let prev_wnd_proc = GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
     if prev_wnd_proc != 0 {
@@ -152,7 +182,7 @@ fn to_polar(x: f64, y: f64) -> (f64, f64) {
 fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     use std::f64::consts::*;
     let radius_compensation: f64 = unsafe { crate::CONFIG.touch.radius_compensation } as f64;
-    let rect = *_WINDOW_RECT.lock().unwrap();
+    let rect = *_WINDOW_RECT.read().unwrap();
     let center: (f64, f64) = (
         (rect.right + rect.left) as f64 / 2.0,
         (rect.bottom + rect.top) as f64 / 2.0,
@@ -186,12 +216,10 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
     }
 }
 
-pub fn get_active_areas() -> HashSet<usize> {
-    let mut touch_areas: HashSet<usize> = HashSet::new();
-    let guard = _ACTIVE_POINTERS.lock().unwrap();
-    for (ptr_id, (x, y)) in guard.iter() {
-        let areas = parse_point(*ptr_id, *x as f64, *y as f64);
-        touch_areas.extend(areas.into_iter());
+pub fn get_active_areas() -> DashSet<usize, ahash::RandomState> {
+    let mut touch_areas: DashSet<usize, ahash::RandomState> = _ACTIVE_KEY_CELLS.clone();
+    for areas in _ACTIVE_POINTERS.iter() {
+        touch_areas.extend(areas.iter().copied());
     }
     touch_areas
 }

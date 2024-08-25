@@ -1,7 +1,7 @@
 mod constant;
 mod pack;
 
-use std::collections::HashSet;
+use dashmap::DashSet;
 use std::io::{Read, Write};
 use std::thread::JoinHandle;
 
@@ -18,11 +18,9 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 struct TouccaState {
     ports: [serial::COMPort; 2],
     startup_complete: bool,
-    touch_areas: HashSet<usize>,
+    touch_areas: DashSet<usize, ahash::RandomState>,
     hwnd: Option<HWND>,
 }
-
-// FIXME: section is sometimes off
 
 impl TouccaState {
     #[instrument]
@@ -150,7 +148,8 @@ impl TouccaState {
             return Ok(());
         }
         let mut packs: [pack::Pack; 2] = [[0; 36], [0; 36]];
-        for &area in self.touch_areas.iter() {
+        for area_ref in self.touch_areas.iter() {
+            let area = *area_ref;
             let side = if area >= 120 { 0 } else { 1 };
             let mut index = area % 120;
             index += index / 5 * 3 + 8;
@@ -187,12 +186,11 @@ impl TouccaState {
             if let Err(e) = self.update_touch() {
                 error!("Error updating touch info to game: {}", e);
             }
-            sleep(Duration::from_millis(16));
+            sleep(Duration::from_micros(8));
         }
     }
 }
 
 pub fn start_serial() -> JoinHandle<()> {
-    let mut state = TouccaState::new();
-    std::thread::spawn(move || unsafe { state.cycle() })
+    std::thread::spawn(|| unsafe { TouccaState::new().cycle() })
 }
