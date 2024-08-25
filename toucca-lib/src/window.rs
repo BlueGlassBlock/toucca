@@ -1,15 +1,16 @@
 use dashmap::DashMap;
 use dashmap::DashSet;
 use once_cell::sync::Lazy;
+use tracing::info;
 use std::sync::RwLock;
-use tracing::error;
 
 use crate::config::*;
 use crate::lo_word;
 
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::UI::Input::Pointer::*;
+use windows::Win32::UI::Input::Touch::*;
+use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use tracing::{debug, instrument};
@@ -47,41 +48,33 @@ pub fn get_window_handle(proc_id: u32) -> Option<HWND> {
     }
 }
 
-static _ACTIVE_POINTERS: Lazy<DashMap<u32, Vec<usize>, ahash::RandomState>> = Lazy::new(|| DashMap::with_capacity_and_hasher(10, Default::default()));
+static _ACTIVE_FINGERS: Lazy<DashMap<u32, Vec<usize>, ahash::RandomState>> = Lazy::new(|| DashMap::with_capacity_and_hasher(10, Default::default()));
 
 static _ACTIVE_KEY_CELLS: Lazy<DashSet<usize, ahash::RandomState>> = Lazy::new(Default::default);
 
-const WM_POINTER_LIST: [u32; 7] = [
-    WM_POINTERDOWN,
-    WM_POINTERUP,
-    WM_POINTERCAPTURECHANGED,
-    WM_POINTERUPDATE,
-    WM_POINTERENTER,
-    WM_POINTERLEAVE,
-    WM_POINTERACTIVATE,
-];
-
 #[instrument(skip_all)]
-fn update_pointer(param: WPARAM) {
-    let mut ptr_info: POINTER_INFO = POINTER_INFO::default();
-    unsafe {
-        // Safety: GetPointerInfo is safe-ish
-        if GetPointerInfo(lo_word(param) as u32, &mut ptr_info).is_err() {
-            return;
-        }
-        if !ScreenToClient(ptr_info.hwndTarget, &mut ptr_info.ptPixelLocationRaw).as_bool() {
-            error!("ScreenToClient failed");
-        }
+fn handle_touch(hwnd: HWND, w_param: WPARAM, l_param: LPARAM) {
+    let finger_cnt = lo_word(w_param);
+    if finger_cnt == 0 || finger_cnt > 10 {
+        return;
     }
-    if (ptr_info.pointerFlags & POINTER_FLAG_FIRSTBUTTON).0 == 0 {
-        let touch_mode = unsafe { &crate::CONFIG.touch.mode };
-        _ACTIVE_POINTERS.remove(&ptr_info.pointerId);
-        if let TouccaMode::Relative(TouccaRelativeConfig { map, .. }) = touch_mode {
-            map.remove(&ptr_info.pointerId);
+    let mut fingers: Vec<TOUCHINPUT> = vec![TOUCHINPUT::default(); finger_cnt as usize];
+    unsafe {
+        GetTouchInputInfo(std::mem::transmute::<_, HTOUCHINPUT>(l_param), &mut fingers, size_of::<TOUCHINPUT>() as i32).unwrap();
+        for finger in fingers.iter() {
+            if (finger.dwFlags & TOUCHEVENTF_UP).0 != 0 {
+                let touch_mode = &crate::CONFIG.touch.mode;
+                _ACTIVE_FINGERS.remove(&finger.dwID);
+                if let TouccaMode::Relative(TouccaRelativeConfig { map, .. }) = touch_mode {
+                    map.remove(&finger.dwID);
+                }
+            } else {
+                let mut point = POINT { x: finger.x / 100, y: finger.y / 100 };
+                ScreenToClient(hwnd, &mut point).unwrap();
+                _ACTIVE_FINGERS.insert(finger.dwID, parse_point(finger.dwID, point.x as f64, point.y as f64));
+            }
         }
-    } else {
-        let POINT { x, y } = ptr_info.ptPixelLocationRaw;
-        _ACTIVE_POINTERS.insert(ptr_info.pointerId, parse_point(ptr_info.pointerId, x as f64, y as f64));
+        CloseTouchInputHandle(std::mem::transmute::<_, HTOUCHINPUT>(l_param)).unwrap();
     }
 }
 
@@ -125,22 +118,20 @@ fn handle_key(msg: u32, w_param: WPARAM) {
 }
 type WndProc = unsafe fn(HWND, u32, WPARAM, LPARAM) -> LRESULT;
 static mut _FALLBACK_WND_PROC: WndProc = DefWindowProcW;
-
+static mut _WINDOW_INIT: bool = false;
 unsafe extern "system" fn wnd_proc_hook(
     hwnd: HWND,
     msg: u32,
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
-    if !IsMouseInPointerEnabled().as_bool() {
-        debug!("Enable mouse in pointer");
-        if let Err(e) = EnableMouseInPointer(TRUE) {
-            debug!("EnableMouseInPointer error: {:?}", e);
-        }
+    if !_WINDOW_INIT {
+        _WINDOW_INIT = true;
+        setup_window(hwnd);
     }
     // Safety: _FALLBACK_WND_PROC is set once per process
-    if WM_POINTER_LIST.contains(&msg) {
-        update_pointer(w_param);
+    if WM_TOUCH == msg {
+        handle_touch(hwnd, w_param, l_param);
     } else if WM_WINDOW_CHANGED_LIST.contains(&msg) {
         update_window_rect(hwnd);
     } else if WM_KEY_LIST.contains(&msg) {
@@ -157,6 +148,30 @@ unsafe fn init_key_map() {
             KEY_MAP.insert(*key, vec![i]);
         }
     }
+}
+
+#[instrument(skip_all)]
+unsafe fn setup_window(hwnd: HWND) {
+    RegisterTouchWindow(hwnd, REGISTER_TOUCH_WINDOW_FLAGS(TWF_WANTPALM.0 | TWF_FINETOUCH.0)).unwrap();
+    unsafe fn set_window_feedback_setting(hwnd: HWND, feedback: FEEDBACK_TYPE, value: BOOL) -> BOOL {
+        unsafe {
+            SetWindowFeedbackSetting(hwnd, feedback, 0, size_of::<BOOL>() as u32, Some(std::mem::transmute(&value)))
+        }
+    }
+    let enabled = FALSE;
+    set_window_feedback_setting(hwnd, FEEDBACK_TOUCH_CONTACTVISUALIZATION, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_PEN_BARRELVISUALIZATION, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_PEN_TAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_PEN_DOUBLETAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_PEN_PRESSANDHOLD, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_PEN_RIGHTTAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_TOUCH_TAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_TOUCH_DOUBLETAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_TOUCH_PRESSANDHOLD, enabled).unwrap();   
+    set_window_feedback_setting(hwnd, FEEDBACK_TOUCH_RIGHTTAP, enabled).unwrap();
+    set_window_feedback_setting(hwnd, FEEDBACK_GESTURE_PRESSANDTAP, enabled).unwrap();
+    info!("Set window feedback setting");
+
 }
 
 #[instrument(skip_all)]
@@ -218,7 +233,7 @@ fn parse_point(ptr_id: u32, abs_x: f64, abs_y: f64) -> Vec<usize> {
 
 pub fn get_active_areas() -> DashSet<usize, ahash::RandomState> {
     let mut touch_areas: DashSet<usize, ahash::RandomState> = _ACTIVE_KEY_CELLS.clone();
-    for areas in _ACTIVE_POINTERS.iter() {
+    for areas in _ACTIVE_FINGERS.iter() {
         touch_areas.extend(areas.iter().copied());
     }
     touch_areas
