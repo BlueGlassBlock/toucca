@@ -164,8 +164,8 @@ impl TouccaState {
 
     #[instrument(skip_all)]
     unsafe fn cycle(&mut self) {
-        use std::thread::sleep;
         use std::time::Duration;
+        let rx = init_pair();
         loop {
             // check whether the window is still alive
             if let Some(handle) = self.hwnd {
@@ -179,6 +179,7 @@ impl TouccaState {
                     hook_wnd_proc(hwnd);
                 }
             }
+            let _ = rx.recv_timeout(Duration::from_millis(100));
             self.touch_areas = window::get_active_areas();
             if let Err(e) = self.read_and_update() {
                 error!("Error reading and updating: {}", e);
@@ -186,7 +187,6 @@ impl TouccaState {
             if let Err(e) = self.update_touch() {
                 error!("Error updating touch info to game: {}", e);
             }
-            sleep(Duration::from_micros(8));
         }
     }
 }

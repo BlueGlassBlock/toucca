@@ -3,6 +3,7 @@ use std::ffi::c_void;
 use std::ptr::{null_mut, NonNull};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use toucca_lib::window::*;
 use toucca_lib::{load_segatools_config, CONFIG};
@@ -138,13 +139,14 @@ pub extern "system" fn mercury_io_touch_start(perform_scan: extern "C" fn(*mut b
     }
     let handle = std::thread::spawn(move || {
         debug!("Started touch poll thread");
+        let rx = init_pair();
         loop {
+            let _ = rx.recv_timeout(Duration::from_millis(100));
             let mut cell_pressed: [bool; 240] = [false; 240];
             for area in get_active_areas() {
                 cell_pressed[area] = true;
             }
             perform_scan(cell_pressed.as_mut_ptr());
-            std::thread::sleep(std::time::Duration::from_millis(5));
         }
     });
     *_TOUCH_THREAD_HANDLE.lock().unwrap() = Some(handle);

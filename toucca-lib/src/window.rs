@@ -15,6 +15,16 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use tracing::{debug, instrument};
 
+static mut _MSG_SENDER: Option<std::sync::mpsc::Sender<()>> = None;
+
+pub fn init_pair() -> std::sync::mpsc::Receiver<()> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    unsafe {
+        _MSG_SENDER = Some(sender);
+    }
+    receiver
+}
+
 #[instrument(skip_all)]
 unsafe extern "system" fn _enum_window(hwnd: HWND, param: LPARAM) -> BOOL {
     let hwnd_ptr_proc_id = (param.0 as *mut (Option<HWND>, u32)).as_mut().unwrap();
@@ -75,6 +85,11 @@ fn handle_touch(hwnd: HWND, w_param: WPARAM, l_param: LPARAM) {
             }
         }
         CloseTouchInputHandle(std::mem::transmute::<_, HTOUCHINPUT>(l_param)).unwrap();
+    }
+    unsafe {
+        if let Some(sender) = _MSG_SENDER.as_ref() {
+            let _ = sender.send(());
+        }
     }
 }
 
@@ -152,7 +167,7 @@ unsafe fn init_key_map() {
 
 #[instrument(skip_all)]
 unsafe fn setup_window(hwnd: HWND) {
-    RegisterTouchWindow(hwnd, REGISTER_TOUCH_WINDOW_FLAGS(TWF_WANTPALM.0 | TWF_FINETOUCH.0)).unwrap();
+    RegisterTouchWindow(hwnd, REGISTER_TOUCH_WINDOW_FLAGS(TWF_WANTPALM.0)).unwrap();
     unsafe fn set_window_feedback_setting(hwnd: HWND, feedback: FEEDBACK_TYPE, value: BOOL) -> BOOL {
         unsafe {
             SetWindowFeedbackSetting(hwnd, feedback, 0, size_of::<BOOL>() as u32, Some(std::mem::transmute(&value)))
