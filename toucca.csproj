@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup Label="Globals" />
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows7.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<PublishSingleFile>true</PublishSingleFile>
+		<SelfContained>false</SelfContained>
+		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
+		<PackageReference Include="System.IO.Ports" Version="8.0.0" />
+	</ItemGroup>
+
+	<!-- New Target to copy the 'web' folder -->
+	<Target Name="CopyWebFolder" AfterTargets="Build">
+		<ItemGroup>
+			<WebFiles Include="web\**\*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(WebFiles)" DestinationFolder="$(OutputPath)\web\%(RecursiveDir)" />
+	</Target>
+
+</Project>

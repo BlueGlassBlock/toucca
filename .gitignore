@@ -1,0 +1,30 @@
+﻿# Ignore Visual Studio files
+.vs/
+
+# Ignore build output
+/bin/
+/obj/
+
+# Ignore NuGet packages
+/packages/
+
+# Ignore user-specific files
+*.user
+
+# Ignore build logs
+*.log
+
+# Ignore Resharper files
+_ReSharper*/
+
+# Ignore Visual Studio code analysis files
+*.CodeAnalysisLog.xml
+*.CodeAnalysisLog.html
+
+# Ignore test results
+TestResults/
+
+# Ignore temporary files
+*.tmp
+*.bak
+*.swp
