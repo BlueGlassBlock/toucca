@@ -64,11 +64,7 @@ namespace toucca
                             rect.Left = pt.X;
                             rect.Top = pt.Y;
                         }
-                        // Calculate the desired size and position based on the other application's window
-                        var height = rect.Width - 10;
-                        var left = rect.Left; // Center horizontally
-                        var top = rect.Top + rect.Height * 0.187;
-                        return new Rect(left, top, height, height);
+                        return new Rect(rect.Left, rect.Top, rect.Width - 10, (rect.Height - 10) * 0.938);
                         // TODO: Properly handle windowed mode
                     }
                 }

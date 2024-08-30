@@ -80,7 +80,7 @@ namespace toucca
         {
             while (true)
             {
-                await Task.Delay(100);
+                await Task.Delay(300);
                 var pos = MercuryHelper.TryLocateMecury();
                 if (pos.HasValue)
                 {
