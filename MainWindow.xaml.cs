@@ -29,7 +29,6 @@ namespace toucca
         {
             await webView.EnsureCoreWebView2Async(null);
             AutoLocateMercury();
-            ExitWithMercury();
         }
 
         private void StartWebHost()
@@ -57,23 +56,6 @@ namespace toucca
             webApplication.UseFileServer(options);
             webApplication.Run("http://127.0.0.1:25730");
 
-        }
-
-        private async void ExitWithMercury()
-        {
-            Process mercuryProc;
-            while (true)
-            {
-                var procs = Process.GetProcessesByName("Mercury-Win64-Shipping");
-                if (procs.Length != 0)
-                {
-                    mercuryProc = procs[0];
-                    break;
-                }
-                await Task.Delay(1000);
-            }
-            await mercuryProc.WaitForExitAsync();
-            App.Current.Shutdown();
         }
 
         private async void AutoLocateMercury()
