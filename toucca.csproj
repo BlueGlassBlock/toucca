@@ -4,7 +4,7 @@
 
 	<PropertyGroup>
 		<OutputType>WinExe</OutputType>
-		<TargetFramework>net8.0-windows7.0</TargetFramework>
+		<TargetFramework>net8.0-windows10.0.22000.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UseWPF>true</UseWPF>
@@ -13,6 +13,13 @@
 		<RuntimeIdentifier>win-x64</RuntimeIdentifier>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
+
+	<ItemGroup>
+	  <Compile Remove=".github\**" />
+	  <EmbeddedResource Remove=".github\**" />
+	  <None Remove=".github\**" />
+	  <Page Remove=".github\**" />
+	</ItemGroup>
 
 
 	<ItemGroup>

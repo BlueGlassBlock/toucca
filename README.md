@@ -20,6 +20,13 @@ toucca will automatically connect to the game & resize its overlay.
 Toucca used WebView2 to serve the content in `web` folder, so you can customize the overlay by editing the files there
 (most of the time you'll find `controller.js` useful).
 
+## Credits
+
+- Any2WACCAi by Raymonf
+- Any2WACCA_with_WACCAVCon by Mishe.W#7250
+- WACVR by xiaopeng12138
+- MaiTouchSensorEmulator by Leapward-Koex
+
 ## License
 
 [GPL 3.0 or later](LICENSE)
