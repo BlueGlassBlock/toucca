@@ -70,7 +70,7 @@ jobs:
       run: |
         dotnet build --configuration Release
         dotnet publish /p:PublishProfile=./Properties/PublishProfiles/FolderProfile.pubxml
-        copy ./web ./bin/Release/publish
+        cp -r ./web ./bin/Release/publish
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
