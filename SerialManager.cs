@@ -21,34 +21,31 @@ namespace toucca
         const byte CMD_MYSTERY1 = 0xa2;
         const byte CMD_MYSTERY2 = 0x94;
         const byte CMD_START_AUTO_SCAN = 0xc9;
-        // const byte CMD_BEGIN_WRITE = 0x77;
-        // const byte CMD_NEXT_WRITE = 0x20;
+        const byte CMD_BEGIN_WRITE = 0x77;
+        const byte CMD_NEXT_WRITE = 0x20;
 
-        private Thread _sendThread;
-        public AutoResetEvent TouchEvent = new(false);
+        private static Thread _sendThread;
+        public static AutoResetEvent TouchEvent = new(false);
 
         private static SerialPort ComL = new("COM5", 115200);
         private static SerialPort ComR = new("COM6", 115200);
 
-        bool init = false;
+        static bool init = false;
         const string SYNC_BOARD_VER = "190523";
         const string UNIT_BOARD_VER = "190514";
-        const string read1 = "    0    0    1    2    3    4    5   15   15   15   15   15   15   11   11   11";
-        const string read2 = "   11   11   11  128  103  103  115  138  127  103  105  111  126  113   95  100";
-        const string read3 = "  101  115   98   86   76   67   68   48  117    0   82  154    0    6   35    4";
-        private readonly Dictionary<byte, List<byte>> readMap = new() {
-            { 0x31, ByteHelper.ConvertStringToByteArray(read1) },
-            { 0x32, ByteHelper.ConvertStringToByteArray(read2) },
-            { 0x33, ByteHelper.ConvertStringToByteArray(read3) }
+        private static readonly Dictionary<byte, string> readMap = new() {
+            { 0x30, "    0    0    1    2    3    4    5   15   15   15   15   15   15   11   11   11" },
+            { 0x31, "   11   11   11  128  103  103  115  138  127  103  105  111  126  113   95  100" },
+            { 0x33, "  101  115   98   86   76   67   68   48  117    0   82  154    0    6   35    4" }
         };
         // private readonly byte[] SettingData_160 = new byte[8] { 160, 49, 57, 48, 53, 50, 51, 44 };
-        private readonly byte[] SettingData_162 = [162, 63, 29];
-        private readonly byte[] SettingData_148 = [148, 0, 20];
-        private readonly byte[] SettingData_201 = [201, 0, 73];
-        private readonly byte[] TouchPackL = new byte[36];
-        private readonly byte[] TouchPackR = new byte[36];
+        private static readonly byte[] SettingData_162 = [162, 63, 29];
+        private static readonly byte[] SettingData_148 = [148, 0, 20];
+        private static readonly byte[] SettingData_201 = [201, 0, 73];
+        private static byte[] TouchPackL = new byte[36];
+        private static byte[] TouchPackR = new byte[36];
 
-        public void Start()
+        public static void Start()
         {
             try
             {
@@ -64,7 +61,7 @@ namespace toucca
             _sendThread = new Thread(SendLoop);
         }
 
-        private void SendLoop()
+        private static void SendLoop()
         {
             while (true)
             {
@@ -73,7 +70,7 @@ namespace toucca
             }
         }
 
-        public void SetTouch(int area, bool state) 
+        public static void SetTouch(int area, bool state) 
         {
             area++; // area: 1 - 240
             if (area < 121)
@@ -89,7 +86,7 @@ namespace toucca
             }
         }
 
-        private void SendTouchState()
+        private static void SendTouchState()
         {
             if (!init)
             {
@@ -109,7 +106,7 @@ namespace toucca
                 Pack[34] = 0;
             return Pack;
         }
-        private async Task PeriodicReadPortLoop()
+        private static async Task PeriodicReadPortLoop()
         {
             while (true)
             {
@@ -120,7 +117,7 @@ namespace toucca
                 await Task.Delay(16);
             }
         }
-        private void ReadAndResp(SerialPort Serial, int side)
+        private static void ReadAndResp(SerialPort Serial, int side)
         {
             if (Serial.BytesToRead <= 0)
                 return;
@@ -130,8 +127,10 @@ namespace toucca
             List<byte> respBytes = new();
             switch (inByte)
             {
+
                 case CMD_GET_SYNC_BOARD_VER:
                     init = false;
+                    Logger.Info($"CMD_GET_SYNC_BOARD_VER {side}");
                     respBytes.Add(inByte);
                     respBytes.AddRange(ByteHelper.ConvertStringToByteArray(SYNC_BOARD_VER));
                     respBytes.Add(44);
@@ -139,14 +138,20 @@ namespace toucca
                     break;
                 case CMD_NEXT_READ:
                     init = false;
-                    if (readMap.TryGetValue(Convert.ToByte(data[2]), out respBytes))
+                    Logger.Info($"CMD_NEXT_READ {side} {Convert.ToByte(data[2])}");
+                    if (readMap.TryGetValue(Convert.ToByte(data[2]), out string readData))
                     {
+                        respBytes.AddRange(ByteHelper.ConvertStringToByteArray(readData));
                         respBytes.Add(ByteHelper.CalCheckSum(respBytes.ToArray(), respBytes.Count));
                     }
-                    else return;
+                    else
+                    {
+                        Logger.Info($"EXTRA READ {side} {Convert.ToByte(data[2])}");
+                    };
                     break;
                 case CMD_GET_UNIT_BOARD_VER:
                     init = false;
+                    Logger.Info($"CMD_GET_UNIT_BOARD_VER {side}");
                     byte sideByte = side == 0 ? Convert.ToByte('R') : Convert.ToByte('L');
                     byte unitCheckSum = side == 0 ? (byte)118 : (byte)104;
                     respBytes.Add(inByte);
@@ -160,13 +165,16 @@ namespace toucca
                     break;
                 case CMD_MYSTERY1:
                     init = false;
+                    Logger.Info($"CMD_MYSTERY1 {side}");
                     respBytes.AddRange(SettingData_162);
                     break;
                 case CMD_MYSTERY2:
                     init = false;
+                    Logger.Info($"CMD_MYSTERY2 {side}");
                     respBytes.AddRange(SettingData_148);
                     break;
                 case CMD_START_AUTO_SCAN:
+                    Logger.Info($"CMD_START_AUTO_SCAN {side}");
                     respBytes.AddRange(SettingData_201);
                     init = true;
                     if (!_sendThread.IsAlive)
@@ -178,7 +186,15 @@ namespace toucca
                     init = false;
                     Logger.Warn("BAD");
                     break;
-
+                case CMD_BEGIN_WRITE:
+                    Logger.Info($"CMD_BEGIN_WRITE {side}");
+                    break;
+                case CMD_NEXT_WRITE:
+                    Logger.Info($"CMD_NEXT_WRITE {side}");
+                    break;
+                default:
+                    Logger.Info($"COMMAND {Convert.ToByte(inByte)} {side}");
+                    break;
             }
             Serial.Write(respBytes.ToArray(), 0, respBytes.Count);
         }

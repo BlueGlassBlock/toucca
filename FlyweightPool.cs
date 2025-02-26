@@ -7,14 +7,9 @@ using System.Threading.Tasks;
 
 namespace toucca
 {
-    public class FlyweightPool<T>
+    public class FlyweightPool<T>(Func<T> factory)
     {
-        public FlyweightPool(Func<T> factory)
-            {
-                this.factory = factory;
-            }
         private readonly ConcurrentBag<T> values = new();
-        private readonly Func<T> factory;
 
         public T Get()
         {

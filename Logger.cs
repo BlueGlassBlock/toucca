@@ -78,7 +78,10 @@ public static class Logger
             lock (lockObj)
             {
                 using var sw = new StreamWriter(GetLogFilePath(), true, Encoding.UTF8);
-                sw.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}");
+                using var stderr = Console.Error;
+                var msg = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {message}";
+                sw.WriteLine(msg);
+                stderr.WriteLine(msg);
             }
         }
         catch

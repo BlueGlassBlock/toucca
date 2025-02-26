@@ -14,13 +14,11 @@ namespace toucca
     /// </summary>
     public partial class MainWindow : Window
     {
-        SerialManager serialManager = new();
-
         public MainWindow()
         {
             this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Task.Run(StartWebHost);
-            Task.Run(serialManager.Start);
+            Task.Run(SerialManager.Start);
             Topmost = true;
             InitializeComponent();
         }
@@ -117,8 +115,8 @@ namespace toucca
 
         private void WriteKeyState(byte key, bool enabled)
         {
-            serialManager.SetTouch(key, enabled);
-            serialManager.TouchEvent.Set();
+            SerialManager.SetTouch(key, enabled);
+            SerialManager.TouchEvent.Set();
         }
     }
 }
